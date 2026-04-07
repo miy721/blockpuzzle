@@ -1,0 +1,2407 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>テトリス風ゲーム</title>
+    <style>
+        body {
+            background-color: #202028;
+            color: #fff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        /* 共通のボタンスタイル */
+        .btn {
+            background: #444;
+            color: #ccc;
+            border: 2px solid #555;
+            padding: 15px 32px;
+            text-align: center;
+            text-decoration: none;
+            display: block; /* 縦並び */
+            font-size: 18px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin: 10px auto;
+            min-width: 240px;
+            font-weight: bold;
+            position: relative;
+        }
+
+        .btn:hover, .btn.selected {
+            background: #4CAF50;
+            color: white;
+            border-color: #4CAF50;
+            transform: scale(1.05);
+            box-shadow: 0 0 15px rgba(76, 175, 80, 0.5);
+        }
+        
+        /* 選択状態のマーカー */
+        .btn.selected::before {
+            content: "▶";
+            position: absolute;
+            left: 15px;
+            color: #fff;
+        }
+
+        /* 画面オーバーレイシステム */
+        #overlay-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #202028;
+            z-index: 200;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .screen {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            max-width: 600px;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .screen.active {
+            display: flex;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        h1 {
+            font-size: 64px;
+            margin-bottom: 20px;
+            color: #00FFFF;
+            text-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
+            letter-spacing: 5px;
+            text-align: center;
+        }
+
+        h2 {
+            font-size: 32px;
+            color: #fff;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+
+        .blink {
+            animation: blinker 1.5s linear infinite;
+            font-size: 24px;
+            margin-top: 50px;
+            color: #FFFF00;
+        }
+
+        @keyframes blinker {
+            50% { opacity: 0; }
+        }
+
+        .description {
+            color: #aaa;
+            margin-bottom: 30px;
+            text-align: center;
+            height: 20px; /* 高さ確保 */
+        }
+
+        /* オプション画面のスタイル */
+        .option-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            max-width: 400px;
+            margin: 15px 0;
+            padding: 10px;
+            background: #333;
+            border-radius: 5px;
+        }
+
+        .option-label {
+            font-weight: bold;
+        }
+
+        .option-value {
+            font-family: monospace;
+            font-size: 18px;
+            color: #00FFFF;
+            width: 60px;
+            text-align: right;
+        }
+        
+        .slider-container {
+            flex-grow: 1;
+            margin: 0 20px;
+        }
+
+        input[type=range] {
+            width: 100%;
+            cursor: pointer;
+        }
+        
+        /* トグルスイッチスタイル */
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 34px;
+        }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 34px;
+        }
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 26px; width: 26px;
+            left: 4px; bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        input:checked + .slider { background-color: #2196F3; }
+        input:checked + .slider:before { transform: translateX(26px); }
+
+
+        /* ゲーム画面（最初は非表示） */
+        #game-wrapper {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            height: 100%;
+            justify-content: center;
+        }
+
+        #game-area {
+            display: flex;
+            gap: 40px;
+            justify-content: center;
+            align-items: flex-start;
+            transition: transform 0.3s, gap 0.3s; /* スムーズな変形 */
+        }
+        
+        /* BATTLEモード時のスタイル調整 */
+        #game-area.battle-mode {
+            transform: scale(0.8); /* 全体を80%に縮小して画面に収める */
+            transform-origin: center top;
+            gap: 20px; /* 間隔を詰める */
+        }
+
+        /* 各プレイヤーのコンテナ */
+        .player-container {
+            display: flex;
+            gap: 10px;
+            align-items: flex-start;
+            padding: 20px;
+            background: #000;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+            position: relative;
+        }
+        
+        /* CPU側のスタイル */
+        #p2-container {
+            border: 2px solid #FF0055;
+        }
+        
+        .player-label {
+            position: absolute;
+            top: -30px;
+            left: 0;
+            width: 100%;
+            text-align: center;
+            font-weight: bold;
+            font-size: 20px;
+            color: #aaa;
+        }
+        
+        .player-label.you { color: #00FFFF; text-shadow: 0 0 5px #00FFFF; }
+        .player-label.enemy { color: #FF0055; text-shadow: 0 0 5px #FF0055; }
+
+        .panel {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            min-width: 100px;
+        }
+
+        canvas {
+            border: 2px solid #333;
+            background-color: #111;
+            display: block;
+        }
+
+        .main-canvas {
+            border: 4px solid #444;
+        }
+
+        .info-box {
+            background: #333;
+            padding: 8px;
+            border-radius: 5px;
+            text-align: center;
+        }
+
+        .info-label {
+            font-size: 12px;
+            color: #aaa;
+            margin-bottom: 3px;
+        }
+
+        .info-value {
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        #controls {
+            margin-top: 20px;
+            font-size: 14px;
+            color: #ccc;
+            text-align: center;
+            line-height: 1.6;
+            /* 横並びレイアウトに変更 */
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px 25px; /* 項目間の余白 (縦 横) */
+            width: 100%;
+            max-width: 900px; /* 広がりすぎないように */
+        }
+        
+        #controls p {
+            margin: 0;
+            white-space: nowrap; /* 項目内での折り返しを防ぐ */
+        }
+
+        .key {
+            display: inline-block;
+            background: #444;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+            border-bottom: 2px solid #222;
+        }
+
+        #practice-controls {
+            display: none; /* 練習モード時のみ表示 */
+            color: #FFFF00;
+            margin-top: 5px;
+        }
+
+        #game-over-modal {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: none; /* Flex when active */
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+        }
+
+        #game-over-modal h1 {
+            font-size: 64px;
+            color: #ff3333;
+            margin-bottom: 10px;
+            text-shadow: 0 0 20px #ff0000;
+        }
+        
+        #game-over-modal h1.clear {
+            color: #00FF00;
+            text-shadow: 0 0 20px #00FF00;
+        }
+        
+        #game-over-modal h1.win {
+            color: #FFD700;
+            text-shadow: 0 0 20px #FFD700;
+        }
+        
+        #game-over-modal h1.lose {
+            color: #888;
+            text-shadow: 0 0 10px #000;
+        }
+
+        #final-score {
+            font-size: 24px;
+            margin-bottom: 30px;
+            text-align: center;
+            line-height: 1.5;
+        }
+        
+        /* 攻撃バー通知 */
+        .garbage-indicator {
+            height: 12px;
+            background: #222;
+            margin-top: 5px;
+            width: 100%;
+            position: relative;
+            border: 1px solid #444;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        .garbage-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #ff8800, #ff3333);
+            width: 0%;
+            transition: width 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- メニューオーバーレイ -->
+    <div id="overlay-container">
+        
+        <!-- 1. タイトル画面 -->
+        <div id="screen-title" class="screen active">
+            <h1>BLOCK PUZZLE</h1>
+            <div class="blink">PRESS SPACE KEY</div>
+        </div>
+
+        <!-- 2. メインメニュー -->
+        <div id="screen-main-menu" class="screen">
+            <h1>MENU</h1>
+            <div class="description">モードを選択してください</div>
+            <div class="menu-items">
+                <div class="btn selected" onclick="selectMenu('SOLO')">PLAY</div>
+                <div class="btn" onclick="selectMenu('OPTION')">OPTION</div>
+            </div>
+        </div>
+
+        <!-- 3. ソロモード選択 -->
+        <div id="screen-mode-select" class="screen">
+            <h1>PLAY</h1>
+            <div class="description" id="mode-desc">モードを選択</div>
+            <div class="menu-items">
+                <div class="btn selected" onmouseover="updateDesc('レベルが上がり続けるエンドレスモード')" onclick="startGame('marathon')">ENDLESS</div>
+                <div class="btn" onmouseover="updateDesc('40ライン消去のタイムアタック')" onclick="startGame('sprint')">SPRINT</div>
+                <div class="btn" onmouseover="updateDesc('BOTと対戦！生き残れ！')" onclick="startGame('battle')">BATTLE (vs CPU)</div>
+                <div class="btn" onmouseover="updateDesc('何度でもやり直せる練習モード')" onclick="startGame('practice')">PRACTICE</div>
+                <div class="btn" onmouseover="updateDesc('メニューに戻る')" onclick="goToScreen('screen-main-menu')">BACK</div>
+            </div>
+        </div>
+
+        <!-- 4. オプション画面 -->
+        <div id="screen-option" class="screen">
+            <h1>OPTION</h1>
+            <div class="description">操作と音の設定</div>
+            
+            <div class="option-row">
+                <div class="option-label">DAS (遅延)</div>
+                <div class="slider-container">
+                    <input type="range" id="das-slider" min="50" max="300" step="10" value="150" oninput="updateOptionDisplay()">
+                </div>
+                <div class="option-value" id="das-value">150ms</div>
+            </div>
+
+            <div class="option-row">
+                <div class="option-label">ARR (間隔)</div>
+                <div class="slider-container">
+                    <input type="range" id="arr-slider" min="0" max="100" step="5" value="50" oninput="updateOptionDisplay()">
+                </div>
+                <div class="option-value" id="arr-value">50ms</div>
+            </div>
+
+            <div class="option-row">
+                <div class="option-label">BGM</div>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="bgm-toggle" checked onchange="updateOptionDisplay()">
+                    <span class="slider"></span>
+                </label>
+                <div class="option-value" id="bgm-status">ON</div>
+            </div>
+
+            <div class="option-row">
+                <div class="option-label">SE</div>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="se-toggle" checked onchange="updateOptionDisplay()">
+                    <span class="slider"></span>
+                </label>
+                <div class="option-value" id="se-status">ON</div>
+            </div>
+
+            <div class="menu-items">
+                <div class="btn selected" onclick="saveOptionsAndBack()">OK</div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- ゲーム全体を囲むラッパー -->
+    <div id="game-wrapper">
+        <div id="game-area">
+            
+            <!-- プレイヤー 1 (自分) -->
+            <div id="p1-container" class="player-container">
+                <div class="player-label you">YOU</div>
+                <!-- 左パネル: ホールド -->
+                <div class="panel">
+                    <div class="info-box">
+                        <div class="info-label">HOLD</div>
+                        <canvas id="p1-hold-canvas" width="100" height="80"></canvas>
+                    </div>
+                    
+                    <div class="info-box">
+                        <div id="p1-best-label" class="info-label">HIGH SCORE</div>
+                        <div id="p1-high-score" class="info-value">0</div>
+                    </div>
+
+                    <div class="info-box">
+                        <div class="info-label">SCORE</div>
+                        <div id="p1-score" class="info-value">0</div>
+                    </div>
+                    
+                    <div class="info-box">
+                        <div class="info-label">TIME</div>
+                        <div id="time-display" class="info-value">0:00.00</div>
+                    </div>
+                </div>
+
+                <!-- メイン画面 -->
+                <div>
+                    <canvas id="p1-main-canvas" class="main-canvas" width="240" height="480"></canvas>
+                    <!-- ダメージバー -->
+                    <div class="garbage-indicator" title="溜まったダメージ">
+                        <div id="p1-garbage-bar" class="garbage-bar"></div>
+                    </div>
+                </div>
+
+                <!-- 右パネル: ネクスト -->
+                <div class="panel">
+                    <div class="info-box">
+                        <div class="info-label">NEXT</div>
+                        <canvas id="p1-next-canvas" width="100" height="250"></canvas>
+                    </div>
+
+                    <div class="info-box">
+                        <div class="info-label">LEVEL</div>
+                        <div id="p1-level" class="info-value">1</div>
+                    </div>
+                    
+                    <div class="info-box">
+                        <div class="info-label">LINES</div>
+                        <div id="p1-lines" class="info-value">0</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- プレイヤー 2 (BOT/敵) -->
+            <div id="p2-container" class="player-container" style="display:none;">
+                <div class="player-label enemy">CPU</div>
+                <!-- 左パネル: ホールド -->
+                <div class="panel">
+                    <div class="info-box">
+                        <div class="info-label">HOLD</div>
+                        <canvas id="p2-hold-canvas" width="100" height="80"></canvas>
+                    </div>
+                    <div class="info-box">
+                        <div class="info-label">SCORE</div>
+                        <div id="p2-score" class="info-value">0</div>
+                    </div>
+                </div>
+
+                <!-- メイン画面 -->
+                <div>
+                    <canvas id="p2-main-canvas" class="main-canvas" width="240" height="480"></canvas>
+                    <div class="garbage-indicator">
+                        <div id="p2-garbage-bar" class="garbage-bar"></div>
+                    </div>
+                </div>
+
+                <!-- 右パネル: ネクスト -->
+                <div class="panel">
+                    <div class="info-box">
+                        <div class="info-label">NEXT</div>
+                        <canvas id="p2-next-canvas" width="100" height="250"></canvas>
+                    </div>
+                    <div class="info-box">
+                        <div class="info-label">LINES</div>
+                        <div id="p2-lines" class="info-value">0</div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <div id="controls">
+            <p><span class="key">←</span> <span class="key">→</span> 移動</p>
+            <p><span class="key">↑</span> 右回転 / <span class="key">Ctrl</span> 左回転</p>
+            <p><span class="key">↓</span> 高速落下</p>
+            <p><span class="key">Space</span> ハードドロップ</p>
+            <p><span class="key">Shift</span> ホールド</p>
+            <p><span class="key" style="border-color: #f55;">R</span> 長押しでリタイア</p>
+            <p id="practice-controls"><span class="key">Ctrl</span>+<span class="key">Z</span> 元に戻す / <span class="key">Ctrl</span>+<span class="key">Y</span> やり直し</p>
+        </div>
+    </div>
+
+    <!-- ゲームオーバー画面 -->
+    <div id="game-over-modal">
+        <h1 id="game-over-title">GAME OVER</h1>
+        <div id="final-score">Score: 0</div>
+        <div>
+            <button class="btn" style="margin: 0 auto 10px;" onclick="retryGame()">もう一度</button>
+            <button class="btn btn-blue" style="margin: 0 auto;" onclick="returnToTitle()">タイトルへ</button>
+        </div>
+    </div>
+
+    <script>
+        // --- 定数と設定 ---
+        const COLS = 10;
+        const ROWS = 20;
+        const BLOCK_SIZE = 24;
+        const SPRINT_GOAL = 40; // 追加
+
+        const COLORS = [
+            null,
+            '#00FFFF', // I: シアン
+            '#0000FF', // J: 青
+            '#FFA500', // L: オレンジ
+            '#FFFF00', // O: 黄色
+            '#00FF00', // S: 緑
+            '#800080', // T: 紫
+            '#FF0000', // Z: 赤
+            '#888888'  // Garbage: グレー
+        ];
+
+        const SHAPES = [
+            [], 
+            // I
+            [
+                [[0, 0, 0, 0], [1, 1, 1, 1], [0, 0, 0, 0], [0, 0, 0, 0]],
+                [[0, 0, 1, 0], [0, 0, 1, 0], [0, 0, 1, 0], [0, 0, 1, 0]],
+                [[0, 0, 0, 0], [0, 0, 0, 0], [1, 1, 1, 1], [0, 0, 0, 0]],
+                [[0, 1, 0, 0], [0, 1, 0, 0], [0, 1, 0, 0], [0, 1, 0, 0]]
+            ],
+            // J
+            [
+                [[2, 0, 0], [2, 2, 2], [0, 0, 0]],
+                [[0, 2, 2], [0, 2, 0], [0, 2, 0]],
+                [[0, 0, 0], [2, 2, 2], [0, 0, 2]],
+                [[0, 2, 0], [0, 2, 0], [2, 2, 0]]
+            ],
+            // L
+            [
+                [[0, 0, 3], [3, 3, 3], [0, 0, 0]],
+                [[0, 3, 0], [0, 3, 0], [0, 3, 3]],
+                [[0, 0, 0], [3, 3, 3], [3, 0, 0]],
+                [[3, 3, 0], [0, 3, 0], [0, 3, 0]]
+            ],
+            // O
+            [
+                [[0, 0, 0, 0], [0, 4, 4, 0], [0, 4, 4, 0], [0, 0, 0, 0]],
+                [[0, 0, 0, 0], [0, 4, 4, 0], [0, 4, 4, 0], [0, 0, 0, 0]],
+                [[0, 0, 0, 0], [0, 4, 4, 0], [0, 4, 4, 0], [0, 0, 0, 0]],
+                [[0, 0, 0, 0], [0, 4, 4, 0], [0, 4, 4, 0], [0, 0, 0, 0]]
+            ],
+            // S
+            [
+                [[0, 5, 5], [5, 5, 0], [0, 0, 0]],
+                [[0, 5, 0], [0, 5, 5], [0, 0, 5]],
+                [[0, 0, 0], [0, 5, 5], [5, 5, 0]],
+                [[5, 0, 0], [5, 5, 0], [0, 5, 0]]
+            ],
+            // T
+            [
+                [[0, 6, 0], [6, 6, 6], [0, 0, 0]],
+                [[0, 6, 0], [0, 6, 6], [0, 6, 0]],
+                [[0, 0, 0], [6, 6, 6], [0, 6, 0]],
+                [[0, 6, 0], [6, 6, 0], [0, 6, 0]]
+            ],
+            // Z
+            [
+                [[7, 7, 0], [0, 7, 7], [0, 0, 0]],
+                [[0, 0, 7], [0, 7, 7], [0, 7, 0]],
+                [[0, 0, 0], [7, 7, 0], [0, 7, 7]],
+                [[0, 7, 0], [7, 7, 0], [7, 0, 0]]
+            ]
+        ];
+
+        const SRS_KICKS = {
+            "JLSTZ": {
+                "0-1": [[0,0], [-1,0], [-1,-1], [0,2], [-1,2]],
+                "1-0": [[0,0], [1,0], [1,1], [0,-2], [1,-2]],
+                "1-2": [[0,0], [1,0], [1,1], [0,-2], [1,-2]],
+                "2-1": [[0,0], [-1,0], [-1,-1], [0,2], [-1,2]],
+                "2-3": [[0,0], [1,0], [1,-1], [0,2], [1,2]],
+                "3-2": [[0,0], [-1,0], [-1,1], [0,-2], [-1,-2]],
+                "3-0": [[0,0], [-1,0], [-1,1], [0,-2], [-1,-2]],
+                "0-3": [[0,0], [1,0], [1,-1], [0,2], [1,2]]
+            },
+            "I": {
+                "0-1": [[0,0], [-2,0], [1,0], [-2,1], [1,-2]],
+                "1-0": [[0,0], [2,0], [-1,0], [2,-1], [-1,2]],
+                "1-2": [[0,0], [-1,0], [2,0], [-1,-2], [2,1]],
+                "2-1": [[0,0], [1,0], [-2,0], [1,2], [-2,-1]],
+                "2-3": [[0,0], [2,0], [-1,0], [2,-1], [-1,2]],
+                "3-2": [[0,0], [-2,0], [1,0], [-2,1], [1,-2]],
+                "3-0": [[0,0], [1,0], [-2,0], [1,2], [-2,-1]],
+                "0-3": [[0,0], [-1,0], [2,0], [-1,-2], [2,1]]
+            }
+        };
+
+        const STORAGE_KEYS = {
+            MARATHON: 'tetris_high_score',
+            SPRINT: 'tetris_sprint_best',
+            DAS: 'tetris_config_das',
+            ARR: 'tetris_config_arr',
+            BGM: 'tetris_config_bgm',
+            SE: 'tetris_config_se'
+        };
+
+        // --- Helper Functions ---
+        function formatTime(ms) {
+            const totalSeconds = Math.floor(ms / 1000);
+            const minutes = Math.floor(totalSeconds / 60);
+            const seconds = totalSeconds % 60;
+            const centis = Math.floor((ms % 1000) / 10);
+            return `${minutes}:${seconds.toString().padStart(2, '0')}.${centis.toString().padStart(2, '0')}`;
+        }
+
+        // --- Sound Manager ---
+        class SoundManager {
+            constructor() {
+                this.ctx = null;
+                this.masterGain = null;
+                this.bgmGain = null;
+                this.seGain = null;
+                this.bgmEnabled = true;
+                this.seEnabled = true;
+                this.isPlayingBGM = false;
+                this.bgmNodes = [];
+                this.nextNoteTime = 0;
+                this.timerID = null;
+                
+                // コロブチカ (Korobeiniki) 4/4拍子 (Extended Loop)
+                // [note, duration (16th notes)] 
+                this.melody = [
+                    // A Part (1st)
+                    [64, 4], [59, 2], [60, 2], [62, 2], [60, 2], [59, 2], [57, 2], // E B C D C B A
+                    [57, 4], [60, 2], [64, 2], [62, 4], [60, 2], [59, 2],          // A C E D C B
+                    [59, 4], [60, 2], [62, 2], [64, 4], [60, 4],                   // B C D E C
+                    [57, 4], [57, 4], [0, 8],                                      // A A Rest
+                    
+                    // B Part (1st)
+                    [62, 4], [65, 2], [69, 4], [67, 2], [65, 2],                   // D F A G F
+                    [64, 6], [60, 2], [64, 4], [62, 2], [60, 2],                   // E C E D C
+                    [59, 4], [60, 2], [62, 2], [64, 4], [60, 4],                   // B C D E C
+                    [57, 4], [57, 4], [0, 8],                                      // A A Rest
+
+                    // A Part (2nd - Same)
+                    [64, 4], [59, 2], [60, 2], [62, 2], [60, 2], [59, 2], [57, 2],
+                    [57, 4], [60, 2], [64, 2], [62, 4], [60, 2], [59, 2],
+                    [59, 4], [60, 2], [62, 2], [64, 4], [60, 4],
+                    [57, 4], [57, 4], [0, 8],
+
+                    // B Part (2nd - High Octave Variation)
+                    [74, 4], [77, 2], [81, 4], [79, 2], [77, 2],                   // D F A G F (High)
+                    [76, 6], [72, 2], [76, 4], [74, 2], [72, 2],                   // E C E D C (High)
+                    [71, 4], [72, 2], [74, 2], [76, 4], [72, 4],                   // B C D E C (High)
+                    [69, 4], [69, 4], [0, 8]                                       // A A Rest (High)
+                ];
+                
+                this.currentNoteIndex = 0;
+                this.baseTempo = 135; // 基本テンポ
+                this.levelTempo = 135; // レベル由来のテンポ
+                this.loopBonus = 0;    // ループ回数による加算
+                this.tempo = 135;
+                this.secondsPerBeat = 60.0 / this.tempo;
+            }
+
+            init() {
+                if (!this.ctx) {
+                    const AudioContext = window.AudioContext || window.webkitAudioContext;
+                    this.ctx = new AudioContext();
+                    this.masterGain = this.ctx.createGain();
+                    this.masterGain.gain.value = 0.3;
+                    this.masterGain.connect(this.ctx.destination);
+                    this.bgmGain = this.ctx.createGain();
+                    this.bgmGain.gain.value = 0.2; 
+                    this.bgmGain.connect(this.masterGain);
+                    this.seGain = this.ctx.createGain();
+                    this.seGain.gain.value = 0.4; 
+                    this.seGain.connect(this.masterGain);
+                }
+                if (this.ctx.state === 'suspended') {
+                    this.ctx.resume();
+                }
+            }
+
+            // レベルに応じてテンポを変更する
+            setSpeed(level) {
+                // レベル1上がるごとにBPMを少し上げる
+                // Base 135 -> Level 10で 180 -> Level 20で 225
+                this.levelTempo = this.baseTempo + (level - 1) * 5; 
+                this.updateTempo();
+            }
+
+            updateTempo() {
+                // レベル分 + ループ分
+                const t = this.levelTempo + this.loopBonus;
+                this.tempo = Math.min(t, 600); // 上限高めに設定
+                this.secondsPerBeat = 60.0 / this.tempo;
+            }
+
+            mtof(note) { return 440 * Math.pow(2, (note - 69) / 12); }
+
+            scheduleNote() {
+                if (!this.bgmEnabled || !this.isPlayingBGM) return;
+                
+                // バッファリング (0.1秒先まで)
+                while (this.nextNoteTime < this.ctx.currentTime + 0.1) {
+                    const [note, duration16th] = this.melody[this.currentNoteIndex];
+                    // 16分音符 = 1/4拍
+                    const duration = duration16th * 0.25 * this.secondsPerBeat; 
+
+                    if (note > 0) {
+                        const osc = this.ctx.createOscillator();
+                        const gain = this.ctx.createGain();
+                        
+                        osc.type = 'square'; 
+                        osc.frequency.value = this.mtof(note);
+                        
+                        // 歯切れの良いエンベロープ
+                        gain.gain.setValueAtTime(0.1, this.nextNoteTime);
+                        gain.gain.exponentialRampToValueAtTime(0.01, this.nextNoteTime + duration * 0.85);
+
+                        osc.connect(gain);
+                        gain.connect(this.bgmGain);
+
+                        osc.start(this.nextNoteTime);
+                        osc.stop(this.nextNoteTime + duration);
+                    }
+                    
+                    this.nextNoteTime += duration;
+                    this.currentNoteIndex++;
+
+                    // ループ判定
+                    if (this.currentNoteIndex >= this.melody.length) {
+                        this.currentNoteIndex = 0;
+                        // ループごとに加速 (+5 BPM)
+                        this.loopBonus += 5;
+                        this.updateTempo();
+                    }
+                }
+                
+                this.timerID = setTimeout(() => this.scheduleNote(), 25);
+            }
+
+            startBGM() {
+                this.init();
+                if (this.isPlayingBGM || !this.bgmEnabled) return;
+                this.isPlayingBGM = true;
+                this.currentNoteIndex = 0;
+                this.nextNoteTime = this.ctx.currentTime + 0.1;
+                // 初期テンポにリセット
+                this.loopBonus = 0;
+                this.levelTempo = this.baseTempo;
+                this.updateTempo();
+                this.scheduleNote();
+            }
+
+            stopBGM() {
+                this.isPlayingBGM = false;
+                if (this.timerID) clearTimeout(this.timerID);
+            }
+
+            playSE(type) {
+                if (!this.seEnabled || !this.ctx) return;
+                this.init();
+                const t = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.connect(gain);
+                gain.connect(this.seGain);
+                switch (type) {
+                    case 'move': osc.type='triangle'; osc.frequency.setValueAtTime(300, t); gain.gain.setValueAtTime(0.1, t); gain.gain.exponentialRampToValueAtTime(0.01, t+0.05); osc.start(t); osc.stop(t+0.05); break;
+                    case 'rotate': osc.type='square'; osc.frequency.setValueAtTime(400, t); gain.gain.setValueAtTime(0.1, t); gain.gain.exponentialRampToValueAtTime(0.01, t+0.08); osc.start(t); osc.stop(t+0.08); break;
+                    case 'drop': osc.type='sine'; osc.frequency.setValueAtTime(150, t); osc.frequency.exponentialRampToValueAtTime(50, t+0.1); gain.gain.setValueAtTime(0.3, t); gain.gain.linearRampToValueAtTime(0, t+0.1); osc.start(t); osc.stop(t+0.1); break;
+                    case 'lock': osc.type='square'; osc.frequency.setValueAtTime(800, t); gain.gain.setValueAtTime(0.1, t); gain.gain.exponentialRampToValueAtTime(0.01, t+0.05); osc.start(t); osc.stop(t+0.05); break;
+                    case 'clear': this.playTone(523.25, 'sine', 0.1, t); this.playTone(659.25, 'sine', 0.1, t+0.05); this.playTone(783.99, 'sine', 0.2, t+0.1); break;
+                    case 'tetris': this.playTone(523.25, 'square', 0.1, t); this.playTone(659.25, 'square', 0.1, t+0.05); this.playTone(783.99, 'square', 0.1, t+0.1); this.playTone(1046.50, 'square', 0.3, t+0.15); break;
+                    case 'hold': osc.type='triangle'; osc.frequency.setValueAtTime(600, t); osc.frequency.linearRampToValueAtTime(300, t+0.1); gain.gain.setValueAtTime(0.1, t); gain.gain.linearRampToValueAtTime(0, t+0.1); osc.start(t); osc.stop(t+0.1); break;
+                    case 'gameover': osc.type='sawtooth'; osc.frequency.setValueAtTime(300, t); osc.frequency.linearRampToValueAtTime(100, t+1.0); gain.gain.setValueAtTime(0.3, t); gain.gain.linearRampToValueAtTime(0, t+1.0); osc.start(t); osc.stop(t+1.0); break;
+                    case 'damage': osc.type='sawtooth'; osc.frequency.setValueAtTime(100, t); osc.frequency.linearRampToValueAtTime(50, t+0.3); gain.gain.setValueAtTime(0.3, t); gain.gain.linearRampToValueAtTime(0, t+0.3); osc.start(t); osc.stop(t+0.3); break;
+                    case 'select': // メニュー選択音
+                        osc.type='square'; osc.frequency.setValueAtTime(440, t); gain.gain.setValueAtTime(0.1, t); gain.gain.exponentialRampToValueAtTime(0.01, t+0.1); osc.start(t); osc.stop(t+0.1); break;
+                }
+            }
+
+            playTone(freq, type, vol, time) {
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, time);
+                gain.gain.setValueAtTime(vol, time);
+                gain.gain.exponentialRampToValueAtTime(0.01, time + 0.3);
+                osc.connect(gain);
+                gain.connect(this.seGain);
+                osc.start(time);
+                osc.stop(time + 0.3);
+            }
+        }
+        const sound = new SoundManager();
+
+        // --- Config ---
+        let DAS = 150; 
+        let ARR = 50;
+        // LOCK_DELAY定数を削除し、クラス内で動的に管理します
+        const RETRY_DURATION = 1000; 
+        const savedDAS = localStorage.getItem(STORAGE_KEYS.DAS);
+        const savedARR = localStorage.getItem(STORAGE_KEYS.ARR);
+        const savedBGM = localStorage.getItem(STORAGE_KEYS.BGM);
+        const savedSE = localStorage.getItem(STORAGE_KEYS.SE);
+        if (savedDAS) DAS = parseInt(savedDAS);
+        if (savedARR) ARR = parseInt(savedARR);
+        if (savedBGM !== null) sound.bgmEnabled = (savedBGM === 'true');
+        if (savedSE !== null) sound.seEnabled = (savedSE === 'true');
+
+        // --- Tetris Game Class ---
+        class TetrisGame {
+            constructor(idPrefix, isBot = false) {
+                this.isBot = isBot;
+                this.prefix = idPrefix;
+                this.canvas = document.getElementById(idPrefix + '-main-canvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.nextCanvas = document.getElementById(idPrefix + '-next-canvas');
+                this.nextCtx = this.nextCanvas.getContext('2d');
+                this.holdCanvas = document.getElementById(idPrefix + '-hold-canvas');
+                this.holdCtx = this.holdCanvas.getContext('2d');
+                this.garbageBar = document.getElementById(idPrefix + '-garbage-bar');
+                
+                // Elements
+                this.scoreEl = document.getElementById(idPrefix + '-score');
+                this.levelEl = document.getElementById(idPrefix + '-level'); 
+                this.linesEl = document.getElementById(idPrefix + '-lines');
+                this.highScoreEl = document.getElementById(idPrefix + '-high-score'); 
+
+                // Game State
+                this.board = [];
+                this.score = 0;
+                this.lines = 0;
+                this.level = 1;
+                this.gameOver = false;
+                this.bag = [];
+                this.nextQueue = [];
+                this.holdType = null;
+                this.canHold = true;
+                this.combo = -1;
+                this.btb = false; // Back-to-Back Flag
+                this.openerQueue = []; // オープナー（定石）の手順キュー
+                this.openerPhase = false; // オープナーモードかどうか
+                
+                this.player = {
+                    pos: {x: 0, y: 0},
+                    matrix: null,
+                    type: 0,
+                    rotationIndex: 0
+                };
+
+                this.dropCounter = 0;
+                this.dropInterval = 1000;
+                this.fastDrop = false;
+                this.lockTimer = 0;
+                this.lockDelay = 500; // 接地猶予時間を可変にするためのプロパティ
+                this.lastMoveRotate = false;
+                
+                this.popups = [];
+                
+                // Battle related
+                this.pendingGarbage = 0;
+                
+                // AI related
+                this.aiTimer = 0;
+                this.aiPlan = null; 
+                this.aiMoveQueue = [];
+                this.isOptimizingMove = false; // 最適化フラグ
+            }
+
+            reset(gameMode) {
+                this.board = this.createMatrix(COLS, ROWS);
+                this.score = 0;
+                this.lines = 0;
+                this.level = 1;
+                this.gameOver = false;
+                this.bag = [];
+                this.nextQueue = [];
+                this.holdType = null;
+                this.canHold = true;
+                this.combo = -1;
+                this.btb = false;
+                this.dropCounter = 0;
+                this.dropInterval = 1000;
+                this.fastDrop = false;
+                this.lockTimer = 0;
+                this.lockDelay = 500; // リセット時は500msに戻す
+                this.lastMoveRotate = false;
+                this.popups = [];
+                this.pendingGarbage = 0;
+                this.updateGarbageBar();
+                this.isOptimizingMove = false;
+                this.openerQueue = [];
+                this.openerPhase = false;
+                
+                if (gameMode === 'battle') {
+                    // Bot starts faster
+                    this.dropInterval = this.isBot ? 500 : 1000; 
+                }
+
+                this.updateNextQueue();
+                
+                // AIかつバトルモードならオープナーを検討
+                if (this.isBot) {
+                    this.checkOpener();
+                }
+
+                this.playerReset();
+                this.updateHUD(gameMode);
+                this.drawHold();
+            }
+            
+            // オープナー（定石）チェック
+            checkOpener() {
+                // 最初のBagを確認
+                // インデックス: 1=I, 2=J, 3=L, 4=O, 5=S, 6=T, 7=Z
+                
+                // 開幕のツモに関わらず、無理やり「はちみつ砲」を狙いに行きます。
+                // ※実際のテトリスではツモ順による可否がありますが、AIは強引に組みに行きます。
+                
+                this.openerPhase = true;
+                this.openerQueue = [];
+                
+                // はちみつ砲 (Hachimitsu Cannon)
+                // 構成はDT砲と類似しており、Tスピンダブル→Tスピントリプルへと繋げる高火力テンプレです。
+                // 1巡目の理想配置（左側構築）
+                this.openerTargets = {
+                    3: {x: -1, r: 3}, // L: 左壁 (x座標は補正される)
+                    2: {x: 1, r: 0},  // J: Lの隣
+                    7: {x: 4, r: 0},  // Z: Jの隣
+                    4: {x: 8, r: 0},  // O: 右端
+                    1: {x: 6, r: 0},  // I: Oの隣
+                    5: {x: 2, r: 0},  // S: Zの上（屋根）
+                    6: {x: 2, r: 2}   // T: 屋根の下にねじ込む（Tスピン待機）
+                };
+                
+                if (this.isBot) {
+                    // はちみつ色（オレンジ/黄色）で宣言
+                    this.addPopup("TEMPLATE: HACHIMITSU", "#FFD700");
+                }
+            }
+
+            createMatrix(w, h) {
+                const matrix = [];
+                while (h--) {
+                    matrix.push(new Array(w).fill(0));
+                }
+                return matrix;
+            }
+
+            createPiece(type) {
+                return SHAPES[type][0];
+            }
+
+            // 7種一巡の法則 (7-Bag System)
+            getNextPieceType() {
+                if (this.bag.length === 0) {
+                    const pieces = [1, 2, 3, 4, 5, 6, 7];
+                    for (let i = pieces.length - 1; i > 0; i--) {
+                        const j = Math.floor(Math.random() * (i + 1));
+                        [pieces[i], pieces[j]] = [pieces[j], pieces[i]];
+                    }
+                    this.bag = pieces;
+                }
+                return this.bag.pop();
+            }
+
+            updateNextQueue() {
+                while (this.nextQueue.length < 3) {
+                    this.nextQueue.push(this.getNextPieceType());
+                }
+            }
+
+            // --- Core Logic ---
+
+            update(deltaTime, gameMode, opponent) {
+                if (this.gameOver) return;
+
+                // AI Logic
+                if (this.isBot) {
+                    this.updateAI(deltaTime, opponent); // Pass opponent to AI
+                }
+
+                // Popups
+                for (let i = this.popups.length - 1; i >= 0; i--) {
+                    const p = this.popups[i];
+                    p.life--;
+                    p.y += p.velocityY;
+                    if (p.life <= 0) this.popups.splice(i, 1);
+                }
+
+                // Drop & Lock
+                if (this.isLanded()) {
+                    this.lockTimer += deltaTime;
+                    // 固定判定に動的な lockDelay を使用
+                    if (this.lockTimer > this.lockDelay) {
+                        this.lockPiece(gameMode, opponent);
+                    }
+                    this.dropCounter = 0;
+                } else {
+                    this.lockTimer = 0;
+                    this.dropCounter += deltaTime;
+                    const interval = this.fastDrop ? 30 : this.dropInterval;
+                    if (this.dropCounter > interval) {
+                        this.playerDrop(gameMode, opponent);
+                    }
+                }
+            }
+
+            isLanded() {
+                this.player.pos.y++;
+                const landed = this.collide(this.board, this.player);
+                this.player.pos.y--;
+                return landed;
+            }
+
+            collide(arena, player) {
+                const [m, o] = [player.matrix, player.pos];
+                for (let y = 0; y < m.length; ++y) {
+                    for (let x = 0; x < m[y].length; ++x) {
+                        if (m[y][x] !== 0) {
+                            const row = y + o.y;
+                            const col = x + o.x;
+                            if (col < 0 || col >= COLS) return true;
+                            if (row >= ROWS) return true;
+                            if (row >= 0 && arena[row][col] !== 0) return true;
+                        }
+                    }
+                }
+                return false;
+            }
+
+            playerDrop(gameMode, opponent) {
+                this.player.pos.y++;
+                if (this.collide(this.board, this.player)) {
+                    this.player.pos.y--;
+                } else {
+                    this.lockTimer = 0;
+                    this.lastMoveRotate = false;
+                }
+                this.dropCounter = 0;
+            }
+
+            playerHardDrop(gameMode, opponent) {
+                if (this.gameOver) return;
+                while (!this.collide(this.board, this.player)) {
+                    this.player.pos.y++;
+                }
+                this.player.pos.y--;
+                if (!this.isBot) sound.playSE('drop');
+                this.lockPiece(gameMode, opponent);
+                this.dropCounter = 0;
+            }
+
+            playerMove(dir) {
+                if (this.gameOver) return;
+                this.player.pos.x += dir;
+                if (this.collide(this.board, this.player)) {
+                    this.player.pos.x -= dir;
+                } else {
+                    if (!this.isBot) sound.playSE('move');
+                    this.lockTimer = 0;
+                    this.lastMoveRotate = false;
+                }
+            }
+
+            playerRotate(dir) {
+                if (this.gameOver) return;
+                const type = this.player.type;
+                const currentRot = this.player.rotationIndex;
+                const nextRot = (currentRot + dir + 4) % 4;
+                const nextMatrix = SHAPES[type][nextRot];
+                if (type === 4) return; // O-piece
+
+                const originalPos = { ...this.player.pos };
+                this.player.matrix = nextMatrix;
+                this.player.rotationIndex = nextRot;
+
+                const key = `${currentRot}-${nextRot}`;
+                let kicks;
+                if (type === 1) kicks = SRS_KICKS["I"][key] || [[0,0]];
+                else kicks = SRS_KICKS["JLSTZ"][key] || [[0,0]];
+
+                let rotated = false;
+                for (let i = 0; i < kicks.length; i++) {
+                    const offset = kicks[i];
+                    this.player.pos.x = originalPos.x + offset[0];
+                    this.player.pos.y = originalPos.y + offset[1];
+                    if (!this.collide(this.board, this.player)) {
+                        rotated = true;
+                        break;
+                    }
+                }
+
+                if (rotated) {
+                    if (!this.isBot) sound.playSE('rotate');
+                    this.lockTimer = 0;
+                    this.lastMoveRotate = true;
+                } else {
+                    this.player.pos = originalPos;
+                    this.player.matrix = SHAPES[type][currentRot];
+                    this.player.rotationIndex = currentRot;
+                }
+            }
+
+            lockPiece(gameMode, opponent) {
+                // 負け判定条件2: Lock Out
+                let isLockOut = false;
+                for (let y = 0; y < this.player.matrix.length; ++y) {
+                    for (let x = 0; x < this.player.matrix[y].length; ++x) {
+                        if (this.player.matrix[y][x] !== 0) {
+                            if (this.player.pos.y + y < 0) {
+                                isLockOut = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (isLockOut) break;
+                }
+
+                if (isLockOut) {
+                    this.gameOver = true;
+                    if (!this.isBot) {
+                        if (gameMode === 'battle') {
+                            setGameOver('lose');
+                        } else {
+                            setGameOver();
+                        }
+                    } else {
+                        if (gameMode === 'battle') {
+                            setGameOver('win');
+                        }
+                    }
+                    return;
+                }
+
+                const tSpin = this.checkTSpin();
+                this.merge(this.board, this.player);
+                const hasCleared = this.arenaSweep(tSpin, gameMode, opponent); // ライン消去したかどうかの結果を受け取る
+                this.playerReset();
+                this.canHold = true;
+                this.drawHold();
+                this.lockTimer = 0;
+                this.lastMoveRotate = false;
+                
+                // Battle: Receive garbage
+                if (gameMode === 'battle' && this.pendingGarbage > 0 && !hasCleared) {
+                    this.receiveGarbage();
+                }
+            }
+
+            merge(arena, player) {
+                player.matrix.forEach((row, y) => {
+                    row.forEach((value, x) => {
+                        if (value !== 0) {
+                            const py = y + player.pos.y;
+                            const px = x + player.pos.x;
+                            if (py >= 0 && py < ROWS && px >= 0 && px < COLS) {
+                                arena[py][px] = value;
+                            }
+                        }
+                    });
+                });
+            }
+
+            checkTSpin() {
+                if (!this.lastMoveRotate) return false;
+                if (this.player.type !== 6) return false;
+                let corners = 0;
+                const points = [{x: 0, y: 0}, {x: 2, y: 0}, {x: 0, y: 2}, {x: 2, y: 2}];
+                points.forEach(pt => {
+                    const tx = this.player.pos.x + pt.x;
+                    const ty = this.player.pos.y + pt.y;
+                    if (tx < 0 || tx >= COLS || ty >= ROWS || (ty >= 0 && this.board[ty][tx] !== 0)) {
+                        corners++;
+                    }
+                });
+                return corners >= 3;
+            }
+
+            arenaSweep(tSpin, gameMode, opponent) {
+                let rowCount = 0;
+                outer: for (let y = ROWS - 1; y >= 0; y--) {
+                    for (let x = 0; x < COLS; x++) {
+                        if (this.board[y][x] === 0) continue outer;
+                    }
+                    const row = this.board.splice(y, 1)[0].fill(0);
+                    this.board.unshift(row);
+                    y++;
+                    rowCount++;
+                }
+
+                if (rowCount > 0) {
+                    if (tSpin) {
+                        this.combo += 2;
+                    } else {
+                        this.combo++;
+                    }
+                    
+                    if(!this.isBot) sound.playSE('clear');
+                } else {
+                    this.combo = -1;
+                }
+
+                let allClear = false;
+                if (rowCount > 0) {
+                    allClear = true;
+                    for (let r = 0; r < ROWS; r++) {
+                        for (let c = 0; c < COLS; c++) {
+                            if (this.board[r][c] !== 0) { allClear = false; break; }
+                        }
+                    }
+                }
+
+                let atk = 0;
+                const isTetris = (rowCount === 4);
+                const isTSpinLine = (tSpin && rowCount > 0);
+                const isBtbAction = isTetris || isTSpinLine;
+
+                if (rowCount > 0 || tSpin) {
+                    let addScore = 0;
+                    let message = "";
+                    let msgColor = "#fff";
+
+                    if (tSpin) {
+                        if (rowCount === 1) { addScore = 800; message = "T-SPIN SINGLE"; msgColor="#ff00ff"; atk=2; }
+                        else if (rowCount === 2) { addScore = 1200; message = "T-SPIN DOUBLE"; msgColor="#ff00ff"; atk=4; if(!this.isBot)sound.playSE('tetris'); }
+                        else if (rowCount === 3) { addScore = 1600; message = "T-SPIN TRIPLE"; msgColor="#ff00ff"; atk=6; if(!this.isBot)sound.playSE('tetris'); }
+                        else { addScore = 400; message = "T-SPIN"; msgColor="#ff00ff"; }
+                    } else {
+                        if (rowCount === 1) { addScore = 100; message = "SINGLE"; msgColor="#ccc"; atk=0; }
+                        else if (rowCount === 2) { addScore = 300; message = "DOUBLE"; msgColor="#88ccff"; atk=1; }
+                        else if (rowCount === 3) { addScore = 500; message = "TRIPLE"; msgColor="#00ff00"; atk=2; }
+                        else if (rowCount === 4) { addScore = 800; message = "TETRIS!"; msgColor="#00ffff"; atk=4; if(!this.isBot)sound.playSE('tetris'); }
+                    }
+
+                    if (isBtbAction) {
+                        if (this.btb) {
+                            addScore = Math.floor(addScore * 1.5);
+                            atk += 1;
+                            message += " BtB";
+                            if (!this.isBot) this.addPopup("Back-to-Back!", "#FFFF00");
+                        }
+                        this.btb = true;
+                    } else if (rowCount > 0) {
+                        this.btb = false;
+                    }
+
+                    if (this.combo > 0) {
+                        addScore += 100 * this.combo * this.level;
+                        let comboAtk = 0;
+                        if (this.combo < 2) comboAtk = 0;
+                        else if (this.combo < 4) comboAtk = 1;
+                        else if (this.combo < 6) comboAtk = 2;
+                        else if (this.combo < 8) comboAtk = 3;
+                        else if (this.combo < 10) comboAtk = 4;
+                        else comboAtk = 5 + (this.combo - 10);
+                        atk += comboAtk;
+                    }
+
+                    if (allClear) {
+                        addScore += 2000 * this.level;
+                        this.addPopup("ALL CLEAR!", "#FFD700");
+                        atk += 10;
+                        if(!this.isBot) sound.playSE('tetris');
+                    }
+
+                    this.score += addScore * this.level;
+                    this.lines += rowCount;
+
+                    if (gameMode === 'marathon') {
+                        this.level = Math.floor(this.lines / 10) + 1;
+                        
+                        // 落下速度の設定（青天井仕様）
+                        const speedCurve = [1000, 850, 700, 600, 500, 400, 300, 200, 150, 100, 80, 60, 40, 30, 20];
+                        
+                        if (this.level <= 15) {
+                            // レベル15までは固定カーブ
+                            this.dropInterval = speedCurve[this.level - 1];
+                        } else {
+                            // レベル16以降は青天井で加速（1レベルにつき1ms短縮、最小0ms）
+                            // Lv35で0ms（即時落下）に到達
+                            this.dropInterval = Math.max(0, 20 - (this.level - 15));
+                        }
+
+                        // 設置猶予（Lock Delay）の短縮
+                        // レベルが上がるごとに短くする（初期500ms、下限150ms）
+                        // レベル30あたりで下限付近に到達するように調整
+                        this.lockDelay = Math.max(150, 500 - ((this.level - 1) * 12));
+                    }
+
+                    this.updateHUD(gameMode);
+                    if (message) this.addPopup(message, msgColor);
+                    if (this.combo > 0) this.addPopup(`${this.combo} COMBO!`, '#FFA500');
+
+                    if (gameMode === 'battle' && opponent && atk > 0) {
+                        if (this.pendingGarbage > 0) {
+                            const offset = Math.min(this.pendingGarbage, atk);
+                            this.pendingGarbage -= offset;
+                            atk -= offset;
+                            this.updateGarbageBar();
+                            if (!this.isBot && offset > 0) this.addPopup("COUNTER!", "#00FF00");
+                        }
+                        
+                        if (atk > 0) {
+                            opponent.addGarbage(atk);
+                            if (!this.isBot) this.addPopup(`ATTACK ${atk}`, "#ff3333");
+                        }
+                    }
+
+                    if (gameMode === 'sprint' && this.lines >= SPRINT_GOAL) {
+                        gameClear();
+                    }
+                } else {
+                    if(!this.isBot) sound.playSE('lock');
+                }
+
+                // ライン消去があったかどうかを返す
+                return rowCount > 0;
+            }
+
+            addGarbage(amount) {
+                this.pendingGarbage += amount;
+                this.updateGarbageBar();
+                if (!this.isBot) {
+                    this.addPopup(`WARNING ${amount}`, "#ff3333");
+                    sound.playSE('damage');
+                }
+            }
+
+            receiveGarbage() {
+                let amount = this.pendingGarbage;
+                if (amount <= 0) return;
+
+                const cap = 4;
+                const damage = Math.min(amount, cap);
+
+                for (let i = 0; i < damage; i++) {
+                    this.board.shift();
+                    const hole = Math.floor(Math.random() * COLS);
+                    const row = new Array(COLS).fill(8); // Gray
+                    row[hole] = 0;
+                    this.board.push(row);
+                }
+                
+                this.pendingGarbage -= damage; // 適用した分だけ減らす
+                this.updateGarbageBar();
+            }
+
+            updateGarbageBar() {
+                if (!this.garbageBar) return;
+                const max = 20;
+                const pct = Math.min(this.pendingGarbage / max * 100, 100);
+                this.garbageBar.style.width = `${pct}%`;
+            }
+
+            playerReset() {
+                this.updateNextQueue();
+                const type = this.nextQueue.shift();
+                this.player.type = type;
+                this.player.matrix = SHAPES[type][0];
+                this.player.rotationIndex = 0;
+                this.player.pos.y = 0;
+                this.player.pos.x = (COLS / 2 | 0) - (this.player.matrix[0].length / 2 | 0);
+                this.lockTimer = 0;
+                
+                if (this.isBot) {
+                    this.aiPlan = null;
+                    this.aiMoveQueue = [];
+                    // 4分の1の確率で最適化（超高速）モードを発動
+                    this.isOptimizingMove = (Math.random() < 0.25);
+                    if (this.isOptimizingMove) {
+                        this.addPopup("OPTIMIZED", "#00FFFF");
+                    }
+                    
+                    // オープナーモードのターゲットを更新（使用したミノを削除）
+                    if (this.openerPhase && this.openerTargets[type]) {
+                         delete this.openerTargets[type];
+                         // 全部置き終わったら解除（簡易判定）
+                         if (Object.keys(this.openerTargets).length === 0) {
+                             this.openerPhase = false;
+                         }
+                    }
+                    // ミノを置いた後、盤面が高くなったらオープナー強制解除
+                    // (evaluateBoardState内で高さ判定などしているが、ここでは簡易的に)
+                }
+
+                // 負け判定条件1: フィールドのブロックがテトリミノの出現位置と被る (Block Out)
+                if (this.collide(this.board, this.player)) {
+                    this.gameOver = true;
+                    if (!this.isBot) {
+                        if (gameMode === 'battle') {
+                            setGameOver('lose');
+                        } else {
+                            setGameOver();
+                        }
+                    } else {
+                        if (gameMode === 'battle') {
+                            setGameOver('win');
+                        }
+                    }
+                }
+                this.drawNext();
+            }
+
+            playerHold() {
+                if (this.gameOver || !this.canHold) return;
+                if (!this.isBot) sound.playSE('hold');
+                
+                const currentType = this.player.type;
+                if (this.holdType === null) {
+                    this.holdType = currentType;
+                    this.playerReset();
+                } else {
+                    const temp = this.holdType;
+                    this.holdType = currentType;
+                    this.player.type = temp;
+                    this.player.matrix = SHAPES[temp][0];
+                    this.player.rotationIndex = 0;
+                    this.player.pos.y = 0;
+                    this.player.pos.x = (COLS / 2 | 0) - (this.player.matrix[0].length / 2 | 0);
+                    this.lockTimer = 0;
+                    if (this.isBot) {
+                        this.aiPlan = null;
+                        this.aiMoveQueue = [];
+                    }
+                }
+                this.canHold = false;
+                this.drawHold();
+            }
+
+            addPopup(text, color = '#fff') {
+                const yOffset = this.popups.length * 30;
+                this.popups.push({
+                    text: text,
+                    x: this.canvas.width / 2,
+                    y: this.canvas.height / 3 + yOffset,
+                    life: 60,
+                    color: color,
+                    velocityY: -0.5
+                });
+            }
+
+            // --- Drawing ---
+            draw() {
+                this.ctx.fillStyle = '#000';
+                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+                this.drawGrid(this.ctx, this.canvas.width, this.canvas.height);
+
+                this.drawMatrix(this.board, {x: 0, y: 0}, this.ctx);
+
+                if (this.player.matrix && !this.gameOver) {
+                    let ghostPos = { ...this.player.pos };
+                    while (!this.collide(this.board, { pos: ghostPos, matrix: this.player.matrix })) {
+                        ghostPos.y++;
+                    }
+                    ghostPos.y--;
+                    this.ctx.globalAlpha = 0.2;
+                    this.drawMatrix(this.player.matrix, ghostPos, this.ctx);
+                    this.ctx.globalAlpha = 1.0;
+                    this.drawMatrix(this.player.matrix, this.player.pos, this.ctx);
+                }
+
+                this.ctx.textAlign = 'center';
+                this.ctx.textBaseline = 'middle';
+                this.popups.forEach(p => {
+                    this.ctx.globalAlpha = Math.max(0, p.life / 60);
+                    this.ctx.strokeStyle = '#000';
+                    this.ctx.lineWidth = 3;
+                    this.ctx.font = 'bold 24px Arial';
+                    this.ctx.strokeText(p.text, p.x, p.y);
+                    this.ctx.fillStyle = p.color;
+                    this.ctx.fillText(p.text, p.x, p.y);
+                });
+                this.ctx.globalAlpha = 1.0;
+            }
+
+            drawMatrix(matrix, offset, context) {
+                matrix.forEach((row, y) => {
+                    row.forEach((value, x) => {
+                        if (value !== 0) {
+                            this.drawBlock(context, x + offset.x, y + offset.y, COLORS[value]);
+                        }
+                    });
+                });
+            }
+
+            drawBlock(context, x, y, color) {
+                const size = BLOCK_SIZE;
+                context.fillStyle = color;
+                context.fillRect(x * size, y * size, size, size);
+                context.lineWidth = 1;
+                context.strokeStyle = 'rgba(0,0,0,0.5)';
+                context.strokeRect(x * size, y * size, size, size);
+                context.fillStyle = 'rgba(255,255,255,0.2)';
+                context.fillRect(x * size, y * size, size, 4);
+                context.fillRect(x * size, y * size, 4, size);
+                context.fillStyle = 'rgba(0,0,0,0.2)';
+                context.fillRect(x * size, (y + 1) * size - 4, size, 4);
+                context.fillRect((x + 1) * size - 4, y * size, 4, size);
+            }
+
+            drawGrid(context, w, h) {
+                context.strokeStyle = '#222';
+                context.lineWidth = 1;
+                for(let x=0; x<=w; x+=BLOCK_SIZE) {
+                    context.beginPath(); context.moveTo(x, 0); context.lineTo(x, h); context.stroke();
+                }
+                for(let y=0; y<=h; y+=BLOCK_SIZE) {
+                    context.beginPath(); context.moveTo(0, y); context.lineTo(w, y); context.stroke();
+                }
+            }
+
+            drawNext() {
+                this.nextCtx.fillStyle = '#111';
+                this.nextCtx.fillRect(0, 0, this.nextCanvas.width, this.nextCanvas.height);
+                let yOffset = 1;
+                this.nextQueue.forEach(type => {
+                    const matrix = SHAPES[type][0];
+                    const xOffset = (this.nextCanvas.width / BLOCK_SIZE - matrix[0].length) / 2;
+                    this.drawMatrix(matrix, {x: xOffset, y: yOffset}, this.nextCtx);
+                    yOffset += 4;
+                });
+            }
+
+            drawHold() {
+                this.holdCtx.fillStyle = '#111';
+                this.holdCtx.fillRect(0, 0, this.holdCanvas.width, this.holdCanvas.height);
+                if (this.holdType) {
+                    const matrix = SHAPES[this.holdType][0];
+                    const xOffset = (this.holdCanvas.width / BLOCK_SIZE - matrix[0].length) / 2;
+                    const yOffset = (this.holdCanvas.height / BLOCK_SIZE - matrix.length) / 2;
+                    if (!this.canHold) this.holdCtx.globalAlpha = 0.4;
+                    this.drawMatrix(matrix, {x: xOffset, y: yOffset}, this.holdCtx);
+                    this.holdCtx.globalAlpha = 1.0;
+                }
+            }
+
+            updateHUD(gameMode) {
+                if (this.scoreEl) this.scoreEl.innerText = this.score;
+                if (this.levelEl) this.levelEl.innerText = this.level;
+                if (this.linesEl) {
+                    if (gameMode === 'sprint') {
+                        this.linesEl.innerText = `${this.lines} / ${SPRINT_GOAL}`;
+                    } else {
+                        this.linesEl.innerText = this.lines;
+                    }
+                }
+                
+                // プレイヤーの場合、BGMの速度を更新
+                if (!this.isBot) {
+                    sound.setSpeed(this.level);
+                }
+                
+                if (this.highScoreEl && !this.isBot) {
+                    const labelEl = document.getElementById('p1-best-label');
+                    if (gameMode === 'marathon') {
+                        labelEl.innerText = "HIGH SCORE";
+                        let saved = localStorage.getItem(STORAGE_KEYS.MARATHON) || 0;
+                        if (this.score > saved) {
+                            saved = this.score;
+                            localStorage.setItem(STORAGE_KEYS.MARATHON, saved);
+                        }
+                        this.highScoreEl.innerText = saved;
+                    } else if (gameMode === 'sprint') {
+                        labelEl.innerText = "BEST TIME";
+                        let saved = localStorage.getItem(STORAGE_KEYS.SPRINT);
+                        this.highScoreEl.innerText = saved ? formatTime(saved) : "--:--.--";
+                    } else if (gameMode === 'practice') {
+                        labelEl.innerText = "MODE";
+                        this.highScoreEl.innerText = "PRACTICE";
+                    } else if (gameMode === 'battle') {
+                        labelEl.innerText = "MODE";
+                        this.highScoreEl.innerText = "BATTLE";
+                    }
+                }
+            }
+
+            // --- AI Logic (Advanced & Super Enhanced) ---
+            updateAI(deltaTime, opponent) {
+                this.aiTimer += deltaTime;
+                // Bot speed: 50% faster (Delay * 0.66)
+                // 通常時の計算式にも係数を掛けて高速化
+                let moveDelay = Math.max(10, (200 - (this.level * 20)) * 0.66); 
+                
+                // 最適化モードなら思考時間ゼロ
+                if (this.isOptimizingMove) moveDelay = 0;
+                
+                // テンプレ構築時は速度を調整
+                // 40ms -> 26ms に短縮して速度をさらに50%上昇
+                if (this.openerPhase) moveDelay = 26;
+
+                if (this.aiTimer > moveDelay) {
+                    this.aiTimer = 0;
+                    
+                    if (!this.aiPlan) {
+                        this.aiPlan = this.think();
+                        this.createMoveQueue(this.aiPlan);
+                    }
+
+                    // 最適化モードなら一瞬で全て実行
+                    // テンプレ構築時は高速化（1フレームあたりの動作数は1のままでDelayを短縮）
+                    const actionsPerFrame = (this.isOptimizingMove) ? 100 : 1;
+
+                    for(let i=0; i<actionsPerFrame; i++) {
+                        if (this.aiMoveQueue.length > 0) {
+                            const action = this.aiMoveQueue.shift();
+                            if (action === 'L') this.playerMove(-1);
+                            else if (action === 'R') this.playerMove(1);
+                            else if (action === 'ROT') this.playerRotate(1);
+                            else if (action === 'DROP') {
+                                this.playerHardDrop('battle', opponent);
+                                break;
+                            }
+                            else if (action === 'HOLD') {
+                                this.playerHold();
+                                break;
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            }
+
+            think() {
+                // 0. Opener Logic (Template Stack)
+                if (this.openerPhase) {
+                    const type = this.player.type;
+                    const target = this.openerTargets[type];
+                    
+                    if (target) {
+                        // 目標位置があればそれを目指す
+                        const r = target.r;
+                        
+                        // Lミノの左壁貼り付け補正など
+                        let x = target.x;
+                        if (type === 3 && x === -1) x = 0; // L
+
+                        // 妥当性チェック: その位置に置けるか？
+                        const matrix = SHAPES[type][r];
+                        
+                        // 回転後の位置補正（簡易）
+                        // 実際にはスーパーローテーションシステム(SRS)が必要だが
+                        // AIは「回転済みの形状」で「目標X」に「ハードドロップ」できるかを見る
+                        
+                        // Check if reachable (simplified: can spawn and drop?)
+                        // 本来はパス探索が必要だが、開幕なので上から落とせればOKとする
+                        
+                        // X座標を合わせて
+                        const spawnX = x;
+                        const spawnY = 0; // 上空
+                        
+                        // 下まで降りるシミュレーション
+                        let testY = spawnY;
+                        const tempPlayer = { pos: {x: spawnX, y: testY}, matrix: matrix };
+                        
+                        // 回転した状態でスポーン位置（あるいはその上）に置けるか？
+                        // ※出現位置と被る場合はcollideするが、Yを調整して確認
+                        
+                        if (!this.collide(this.board, tempPlayer)) {
+                             // そのまま落とせるか確認
+                             while (!this.collide(this.board, tempPlayer)) {
+                                 tempPlayer.pos.y++;
+                             }
+                             tempPlayer.pos.y--;
+                             
+                             // 設置予定位置がターゲットY周辺か？（積み上がっているか確認）
+                             // 今回は「置ければヨシ」とする
+                             return { x: x, rot: r, hold: false };
+                        } else {
+                            // 回転して出現位置に置けない場合（SRSが必要なケースなど）
+                            // 簡易AIでは諦めて通常思考へ
+                            this.openerPhase = false;
+                        }
+                    } else if (this.canHold) {
+                         // ターゲットにないミノが来たらホールド
+                         return { x: 0, rot: 0, hold: true };
+                    } else {
+                        // ホールドも使えない場合は諦める
+                        this.openerPhase = false;
+                    }
+                }
+                
+                // 通常AIロジック
+                // Candidates: [Current Piece, Hold Piece]
+                let piecesToCheck = [{ type: this.player.type, hold: false }];
+                
+                if (this.canHold) {
+                    let hType = this.holdType;
+                    if (hType === null) {
+                        if (this.nextQueue.length > 0) hType = this.nextQueue[0];
+                    }
+                    if (hType !== null) {
+                        piecesToCheck.push({ type: hType, hold: true });
+                    }
+                }
+
+                // 1. Generate all valid moves for current/hold piece
+                let candidates = []; 
+
+                for (let p of piecesToCheck) {
+                    const type = p.type;
+                    const rotations = [0, 1, 2, 3];
+                    
+                    for (let r of rotations) {
+                        const matrix = SHAPES[type][r];
+                        // Scan X positions
+                        for (let x = -2; x < COLS; x++) {
+                            // Check valid spawn
+                            const spawnPlayer = { pos: {x, y: 0}, matrix: matrix };
+                            if (this.collide(this.board, spawnPlayer)) continue;
+
+                            // Simulate drop
+                            const simPlayer = { pos: {x, y: 0}, matrix: matrix };
+                            while (!this.collide(this.board, simPlayer)) {
+                                simPlayer.pos.y++;
+                            }
+                            simPlayer.pos.y--; // Landed
+
+                            // Evaluate immediate result
+                            const boardScore = this.evaluateBoardState(this.board, simPlayer);
+                            
+                            // Generate the resulting board for lookahead
+                            const nextBoard = this.getSimulatedBoard(this.board, simPlayer);
+
+                            candidates.push({
+                                score: boardScore,
+                                move: { x: x, rot: r, hold: p.hold },
+                                nextBoard: nextBoard
+                            });
+                        }
+                    }
+                }
+
+                // Sort by immediate score to prune search
+                candidates.sort((a, b) => b.score - a.score);
+
+                // 2. Lookahead: Check NEXT piece for top candidates
+                // Only check top few moves to save performance
+                const topK = 8; 
+                const nextType = (this.nextQueue.length > 0) ? this.nextQueue[0] : 0;
+                
+                let finalBestScore = -Infinity;
+                let finalBestMove = candidates[0] ? candidates[0].move : {x:0, rot:0, hold:false};
+
+                for (let i = 0; i < Math.min(candidates.length, topK); i++) {
+                    const cand = candidates[i];
+                    
+                    // If immediate death, skip
+                    if (cand.score < -500000) continue;
+
+                    // Evaluate Next Piece on the hypothetical board
+                    let maxNextScore = -Infinity;
+                    let hasValidMove = false;
+                    const rotations = [0, 1, 2, 3];
+
+                    for (let nr of rotations) {
+                        const nMatrix = SHAPES[nextType][nr];
+                        for (let nx = -2; nx < COLS; nx++) {
+                             const nPlayer = { pos: {x: nx, y: 0}, matrix: nMatrix };
+                             if (this.collide(cand.nextBoard, nPlayer)) continue;
+                             
+                             while (!this.collide(cand.nextBoard, nPlayer)) {
+                                 nPlayer.pos.y++;
+                             }
+                             nPlayer.pos.y--;
+                             
+                             // Evaluate future state
+                             const s = this.evaluateBoardState(cand.nextBoard, nPlayer);
+                             if (s > maxNextScore) maxNextScore = s;
+                             hasValidMove = true;
+                        }
+                    }
+                    
+                    if (!hasValidMove) maxNextScore = -1000000; // Dead end
+
+                    // Total score = Immediate + Future
+                    const totalScore = cand.score + maxNextScore;
+                    
+                    if (totalScore > finalBestScore) {
+                        finalBestScore = totalScore;
+                        finalBestMove = cand.move;
+                    }
+                }
+
+                return finalBestMove;
+            }
+
+            // Create a board copy with the piece locked and lines cleared
+            getSimulatedBoard(currentBoard, player) {
+                const board = currentBoard.map(row => [...row]);
+                const m = player.matrix;
+                const o = player.pos;
+                
+                // Place block
+                for (let y = 0; y < m.length; ++y) {
+                    for (let x = 0; x < m[y].length; ++x) {
+                        if (m[y][x] !== 0) {
+                            const py = y + o.y;
+                            const px = x + o.x;
+                            if (py >= 0 && py < ROWS && px >= 0 && px < COLS) {
+                                board[py][px] = 8;
+                            }
+                        }
+                    }
+                }
+                
+                // Clear lines (Important for lookahead)
+                for (let y = ROWS - 1; y >= 0; y--) {
+                    if (board[y].every(cell => cell !== 0)) {
+                        board.splice(y, 1);
+                        board.unshift(new Array(COLS).fill(0));
+                        y++; 
+                    }
+                }
+                return board;
+            }
+
+            evaluateBoardState(currentBoard, player) {
+                const board = currentBoard.map(row => [...row]);
+                const m = player.matrix;
+                const o = player.pos;
+                
+                // ブロックを配置した仮想盤面を作成
+                for (let y = 0; y < m.length; ++y) {
+                    for (let x = 0; x < m[y].length; ++x) {
+                        if (m[y][x] !== 0) {
+                            const py = y + o.y;
+                            const px = x + o.x;
+                            if (py >= 0 && py < ROWS && px >= 0 && px < COLS) {
+                                board[py][px] = 8;
+                            }
+                        }
+                    }
+                }
+
+                // --- 盤面の分析 ---
+                let lines = 0;
+                let holes = 0;
+                let aggregateHeight = 0;
+                let bumpiness = 0;
+                let maxHeight = 0;
+                let blockade = 0; // 穴の上にあるブロック数
+
+                // ライン消去数のカウント
+                for (let y = 0; y < ROWS; y++) {
+                    if (board[y].every(cell => cell !== 0)) lines++;
+                }
+
+                // 各列の高さと、列ごとの分析
+                const colHeights = new Array(COLS).fill(0);
+                for (let x = 0; x < COLS; x++) {
+                    for (let y = 0; y < ROWS; y++) {
+                        if (board[y][x] !== 0) {
+                            colHeights[x] = ROWS - y;
+                            break;
+                        }
+                    }
+                }
+
+                aggregateHeight = colHeights.reduce((a, b) => a + b, 0);
+                maxHeight = Math.max(...colHeights);
+
+                // 穴（Holes）と遮蔽（Blockades）のカウント
+                for (let x = 0; x < COLS; x++) {
+                    let blockFound = false;
+                    for (let y = 0; y < ROWS; y++) {
+                        if (board[y][x] !== 0) {
+                            blockFound = true;
+                        } else if (blockFound && board[y][x] === 0) {
+                            holes++;
+                            blockade += (ROWS - y); // 穴が深いほど罪が重い
+                        }
+                    }
+                }
+
+                // デコボコ度（Bumpiness）
+                for (let x = 0; x < COLS - 1; x++) {
+                    bumpiness += Math.abs(colHeights[x] - colHeights[x+1]);
+                }
+
+                // 即死回避
+                if (maxHeight >= ROWS) return -100000000;
+
+                // --- スコアリング（戦術切り替え） ---
+                let score = 0;
+                
+                // 高さ12（下から8段目くらい）を境にモード変更
+                const isSafe = maxHeight < 12;
+
+                if (isSafe) {
+                    // === 攻撃モード（テトリス狙い） ===
+                    
+                    // 1. 穴を作らないことを最重視
+                    score += holes * -500.0;
+                    score += blockade * -50.0;
+
+                    // 2. 右端（インデックス9）を空けておくボーナス
+                    const rightWellHeight = colHeights[COLS - 1];
+                    const otherColsMax = Math.max(...colHeights.slice(0, COLS - 1));
+                    
+                    if (rightWellHeight === 0) {
+                        // 右端が空いていて、他が積み上がっているほど良い（テトリスの準備）
+                        score += otherColsMax * 10; 
+                    } else if (lines < 4) {
+                        // テトリス以外で右端を埋めるのはペナルティ
+                        score -= rightWellHeight * 200; 
+                    }
+
+                    // 3. 平坦に積む
+                    score += bumpiness * -20.0;
+
+                    // 4. ライン消去の評価
+                    if (lines === 4) {
+                        score += 50000; // テトリス最高！
+                    } else if (lines > 0) {
+                        // 半端な消去はペナルティ（積み込みたいので我慢）
+                        score -= 5000;
+                    } else {
+                        // 消さない配置は少しプラス（自滅しない範囲で）
+                        score += 10;
+                    }
+
+                } else {
+                    // === 生存モード（削り優先） ===
+                    
+                    // 1. とにかくラインを消す
+                    if (lines > 0) {
+                        score += lines * 50000;
+                    }
+
+                    // 2. 高さを下げることを強く推奨
+                    score += aggregateHeight * -50.0;
+                    score += maxHeight * -100.0;
+
+                    // 3. 穴は作ってもいいから消す（ただし深すぎる穴は避ける）
+                    score += holes * -50.0;
+                    
+                    // 4. 遮蔽はなるべく避ける（次の消去の邪魔になるから）
+                    score += blockade * -50.0;
+                    
+                    // 5. デコボコは気にしない
+                    score += bumpiness * -5.0;
+                }
+
+                return score;
+            }
+
+            createMoveQueue(plan) {
+                if (plan.hold) {
+                    this.aiMoveQueue.push('HOLD');
+                    // Recalculate move after hold (simplified: just wait next think frame? no, must plan now)
+                    // If hold, the piece changes. The plan.x and plan.rot were calculated for the HELD piece.
+                    // So we can just proceed with movement.
+                }
+
+                for (let i = 0; i < plan.rot; i++) this.aiMoveQueue.push('ROT');
+                
+                // Note: startX calculation depends on the PIECE TYPE.
+                // If we held, the type changed. We need to know which piece we are moving.
+                // In think(), exploreMoves was called on the correct type.
+                // But here, this.player.type might be old if we haven't executed HOLD yet.
+                // Actually, if hold is true, we should execute hold immediately in updateAI, then
+                // plan movement for the NEW piece in the NEXT updateAI cycle.
+                // But to make it snappy, let's just push HOLD and return.
+                // The AI will rethink next frame with the new piece.
+                
+                if (plan.hold) return; 
+
+                // Normal movement
+                const startX = (COLS / 2 | 0) - (SHAPES[this.player.type][0][0].length / 2 | 0);
+                const diff = plan.x - startX;
+                
+                if (diff < 0) {
+                    for (let i = 0; i < Math.abs(diff); i++) this.aiMoveQueue.push('L');
+                } else {
+                    for (let i = 0; i < diff; i++) this.aiMoveQueue.push('R');
+                }
+                
+                this.aiMoveQueue.push('DROP');
+            }
+        }
+
+        // --- Main Game Loop ---
+        let p1, p2;
+        let gameMode = 'marathon';
+        let isPaused = true;
+        let gameOver = false;
+        let gameStartTime = 0;
+        let gameElapsedTime = 0;
+        let currentScreen = 'screen-title';
+        let selectedMenuIndex = 0;
+        
+        let moveTimer = 0;
+        // キー管理オブジェクトに lastLR (最後に押した左右キー: -1=左, 1=右, 0=なし) を追加
+        let keys = { left: false, right: false, retry: false, lastLR: 0 };
+        let retryTimer = 0;
+
+        function initGame() {
+            // Instantiate players
+            p1 = new TetrisGame('p1');
+            p2 = new TetrisGame('p2', true); // P2 is bot
+        }
+
+        function startGame(mode) {
+            gameMode = mode;
+            sound.playSE('move');
+            sound.startBGM();
+
+            document.getElementById('overlay-container').style.display = 'none';
+            document.getElementById('game-wrapper').style.display = 'flex';
+            document.getElementById('game-over-modal').style.display = 'none';
+            document.getElementById('practice-controls').style.display = (mode === 'practice') ? 'block' : 'none';
+            
+            // Layout adjustments for Battle mode
+            const gameArea = document.getElementById('game-area');
+            if (mode === 'battle') {
+                gameArea.classList.add('battle-mode');
+            } else {
+                gameArea.classList.remove('battle-mode');
+            }
+
+            // UI Setup
+            const p2Container = document.getElementById('p2-container');
+            if (mode === 'battle') {
+                p2Container.style.display = 'flex';
+            } else {
+                p2Container.style.display = 'none';
+            }
+
+            if (!p1) initGame();
+            
+            p1.reset(mode);
+            if (mode === 'battle') p2.reset(mode);
+
+            gameOver = false;
+            isPaused = false;
+            gameStartTime = performance.now();
+            
+            update();
+        }
+
+        function retryGame() {
+            startGame(gameMode);
+        }
+
+        function returnToTitle() {
+            sound.stopBGM();
+            document.getElementById('overlay-container').style.display = 'flex';
+            document.getElementById('game-wrapper').style.display = 'none';
+            document.getElementById('game-over-modal').style.display = 'none';
+            showScreen('screen-title');
+            isPaused = true;
+        }
+
+        function setGameOver(result) {
+            gameOver = true;
+            sound.stopBGM();
+            sound.playSE('gameover');
+            
+            const modal = document.getElementById('game-over-modal');
+            const title = document.getElementById('game-over-title');
+            const scoreText = document.getElementById('final-score');
+            
+            modal.style.display = 'flex';
+            
+            if (result === 'win') {
+                title.innerText = "YOU WIN!";
+                title.className = "win";
+                scoreText.innerText = "";
+            } else if (result === 'lose') {
+                title.innerText = "YOU LOSE";
+                title.className = "lose";
+                scoreText.innerText = "";
+            } else {
+                title.innerText = "GAME OVER";
+                title.className = "";
+                scoreText.innerText = `Score: ${p1.score}\nLines: ${p1.lines}`;
+            }
+        }
+        
+        function gameClear() {
+            gameOver = true;
+            sound.stopBGM();
+            sound.playSE('tetris');
+            
+            const modal = document.getElementById('game-over-modal');
+            const title = document.getElementById('game-over-title');
+            const scoreText = document.getElementById('final-score');
+            
+            modal.style.display = 'flex';
+            title.innerText = "GAME CLEAR!";
+            title.className = "clear";
+            
+            const timeText = document.getElementById('time-display').innerText;
+            scoreText.innerText = `Time: ${timeText}\nScore: ${p1.score}`;
+
+            let saved = localStorage.getItem(STORAGE_KEYS.SPRINT);
+            if (gameMode === 'sprint') {
+                // save logic omitted for brevity
+            }
+        }
+
+        // --- Menu Logic ---
+        function showScreen(screenId) {
+            document.querySelectorAll('.screen').forEach(el => el.classList.remove('active'));
+            document.getElementById(screenId).classList.add('active');
+            currentScreen = screenId;
+            if (screenId === 'screen-option') {
+                document.getElementById('das-slider').value = DAS;
+                document.getElementById('arr-slider').value = ARR;
+                document.getElementById('bgm-toggle').checked = sound.bgmEnabled;
+                document.getElementById('se-toggle').checked = sound.seEnabled;
+                updateOptionDisplay();
+            }
+            sound.init();
+            updateMenuSelection(0);
+        }
+
+        function updateMenuSelection(index) {
+            const activeScreen = document.getElementById(currentScreen);
+            const buttons = activeScreen.querySelectorAll('.btn');
+            if (buttons.length === 0) return;
+            if (index < 0) index = buttons.length - 1;
+            if (index >= buttons.length) index = 0;
+            selectedMenuIndex = index;
+            buttons.forEach((btn, i) => {
+                if (i === index) { btn.classList.add('selected'); if(btn.onmouseover)btn.onmouseover(); }
+                else btn.classList.remove('selected');
+            });
+        }
+
+        function goToScreen(id) { showScreen(id); }
+        function selectMenu(choice) {
+            sound.playSE('select'); // 決定音
+            if (choice === 'SOLO') goToScreen('screen-mode-select');
+            else if (choice === 'OPTION') goToScreen('screen-option');
+        }
+        function updateDesc(t) { document.getElementById('mode-desc').innerText = t; }
+        
+        function updateOptionDisplay() {
+            DAS = parseInt(document.getElementById('das-slider').value);
+            ARR = parseInt(document.getElementById('arr-slider').value);
+            document.getElementById('das-value').innerText = DAS + 'ms';
+            document.getElementById('arr-value').innerText = ARR + 'ms';
+            document.getElementById('bgm-status').innerText = document.getElementById('bgm-toggle').checked ? 'ON' : 'OFF';
+            document.getElementById('se-status').innerText = document.getElementById('se-toggle').checked ? 'ON' : 'OFF';
+        }
+        
+        function saveOptionsAndBack() {
+            sound.playSE('select'); // 決定音
+            sound.bgmEnabled = document.getElementById('bgm-toggle').checked;
+            sound.seEnabled = document.getElementById('se-toggle').checked;
+            localStorage.setItem(STORAGE_KEYS.DAS, DAS);
+            localStorage.setItem(STORAGE_KEYS.ARR, ARR);
+            localStorage.setItem(STORAGE_KEYS.BGM, sound.bgmEnabled);
+            localStorage.setItem(STORAGE_KEYS.SE, sound.seEnabled);
+            goToScreen('screen-main-menu');
+        }
+
+        // --- Loop ---
+        let lastTime = 0;
+        function update(time = 0) {
+            if (isPaused) { requestAnimationFrame(update); return; }
+            if (gameOver) { requestAnimationFrame(update); return; }
+
+            const deltaTime = time - lastTime;
+            lastTime = time;
+            
+            gameElapsedTime = performance.now() - gameStartTime;
+            document.getElementById('time-display').innerText = formatTime(gameElapsedTime);
+
+            // Input Handling (P1 only) - DAS Cancel / Last Key Priority Logic
+            let dir = 0;
+            if (keys.left && keys.right) {
+                // 両方押されている場合は、最後に押した方向を優先
+                dir = keys.lastLR;
+            } else if (keys.left) {
+                dir = -1;
+            } else if (keys.right) {
+                dir = 1;
+            }
+
+            if (dir !== 0) {
+                moveTimer += deltaTime;
+                if (moveTimer > DAS) {
+                    while (moveTimer > DAS + ARR) {
+                        moveTimer -= ARR;
+                        p1.playerMove(dir);
+                    }
+                }
+            } else {
+                // キーが押されていない、または相殺された場合はタイマーリセット
+                moveTimer = 0;
+            }
+            
+            if (keys.retry) {
+                retryTimer += deltaTime;
+                if (retryTimer >= RETRY_DURATION) {
+                    if(gameMode==='battle') setGameOver('lose'); else setGameOver();
+                    retryTimer = 0;
+                }
+            } else {
+                retryTimer = 0;
+            }
+
+            // Update P1
+            p1.update(deltaTime, gameMode, (gameMode === 'battle' ? p2 : null));
+            p1.draw();
+
+            // Update P2 (if battle)
+            if (gameMode === 'battle') {
+                p2.update(deltaTime, gameMode, p1);
+                p2.draw();
+            }
+
+            requestAnimationFrame(update);
+        }
+
+        // --- Inputs ---
+        document.addEventListener('keydown', event => {
+            if (isPaused) {
+                const screen = document.getElementById(currentScreen);
+                if (!screen) return;
+                
+                if (currentScreen === 'screen-title' && event.keyCode === 32) {
+                    sound.playSE('select'); showScreen('screen-main-menu'); return;
+                }
+                
+                if (['screen-main-menu','screen-mode-select','screen-option'].includes(currentScreen)) {
+                    if (event.keyCode === 38) { // Up
+                        event.preventDefault(); sound.playSE('move'); updateMenuSelection(selectedMenuIndex - 1);
+                    } else if (event.keyCode === 40) { // Down
+                        event.preventDefault(); sound.playSE('move'); updateMenuSelection(selectedMenuIndex + 1);
+                    } else if (event.keyCode === 13 || event.keyCode === 32) { // Enter/Space
+                        event.preventDefault(); 
+                        const btns = screen.querySelectorAll('.btn');
+                        if (btns[selectedMenuIndex]) btns[selectedMenuIndex].click();
+                    } else if (event.keyCode === 27) { // Esc
+                        sound.playSE('move'); // キャンセル音的な
+                        if(currentScreen === 'screen-option') saveOptionsAndBack();
+                        else if(currentScreen === 'screen-mode-select') goToScreen('screen-main-menu');
+                    }
+                }
+                return;
+            }
+
+            if (gameOver) return;
+
+            const k = event.keyCode;
+            if ([32, 37, 38, 39, 40, 17, 90, 82].includes(k)) {
+                if (k === 82) event.preventDefault();
+                else if (event.ctrlKey && (k === 90 || k === 89)) event.preventDefault();
+                else if (!event.ctrlKey && k !== 17) event.preventDefault();
+                else if (k === 17) event.preventDefault();
+            }
+
+            if (gameMode === 'practice') {
+                if (event.ctrlKey && k === 90) { undo(); return; } // Z
+                if (event.ctrlKey && k === 89) { redo(); return; } // Y
+            }
+
+            // DAS Cancel & Last Key Priority Implementation
+            if (k === 37) { // Left
+                if (!keys.left) {
+                    // 新しく左が押された
+                    keys.left = true;
+                    keys.lastLR = -1; // 優先方向を左に更新
+                    
+                    // 右が押されていない、または右が押されていても後押し優先で即移動＆DASリセット
+                    p1.playerMove(-1);
+                    moveTimer = 0; // DASリセット（キャンセル）
+                }
+            } else if (k === 39) { // Right
+                if (!keys.right) {
+                    // 新しく右が押された
+                    keys.right = true;
+                    keys.lastLR = 1; // 優先方向を右に更新
+                    
+                    p1.playerMove(1);
+                    moveTimer = 0; // DASリセット（キャンセル）
+                }
+            } else if (k === 40) { // Down
+                if (!p1.fastDrop) p1.fastDrop = true;
+            } else if (k === 38) { // Up
+                p1.playerRotate(1);
+            } else if (k === 17 || (k === 90 && !event.ctrlKey)) { // Ctrl/Z
+                p1.playerRotate(-1);
+            } else if (k === 32) { // Space
+                p1.playerHardDrop(gameMode, (gameMode === 'battle' ? p2 : null));
+            } else if (k === 16) { // Shift
+                p1.playerHold();
+            } else if (k === 82) { // R
+                keys.retry = true;
+            }
+        });
+
+        document.addEventListener('keyup', event => {
+            if (event.keyCode === 40 && p1) p1.fastDrop = false;
+            
+            if (event.keyCode === 37) { // Left Release
+                keys.left = false;
+                if (keys.right) {
+                    keys.lastLR = 1; // 左を離したので右を優先に戻す
+                    // オプション: ここでmoveTimerをリセットするかどうか
+                    // 一般的にはリセットしない（チャージ維持）か、リセットするか分かれるが、
+                    // スムーズな切り返しのために維持するパターンを採用（方向キー入れっぱなし挙動）
+                    // ただし、即座に動くために1回moveを入れるか？
+                    // ここではシンプルにタイマー維持。
+                } else {
+                    keys.lastLR = 0;
+                }
+            }
+            if (event.keyCode === 39) { // Right Release
+                keys.right = false;
+                if (keys.left) {
+                    keys.lastLR = -1; // 右を離したので左を優先に戻す
+                } else {
+                    keys.lastLR = 0;
+                }
+            }
+            
+            if (event.keyCode === 82) { keys.retry = false; retryTimer = 0; }
+        });
+
+        initGame();
+        lastTime = performance.now();
+        requestAnimationFrame(update);
+
+    </script>
+</body>
+</html>
